@@ -327,7 +327,7 @@ footer a:hover{color:var(--wow-gold);}
     <div class="boss-tag">@LocalizationService.UI.BossTag(lang)</div>
     <div class="verdict-line">
       <span class="vl-loser">@loser.PlayerName</span>
-      <span class="vl-sep"> perdeu para </span>
+      <span class="vl-sep"> @LocalizationService.UI.LostLabel(lang) </span>
       <span class="vl-winner">@winner.PlayerName</span>
     </div>
     <div class="diff-pill">▼ @Model.DiffPercent.ToString("F1")% @LocalizationService.UI.DiffLess(lang)</div>
