@@ -1,0 +1,20 @@
+@{
+    var currentLang = ViewBag.Lang as string ?? "pt";
+    var isEn = currentLang == "en";
+    // Build opposite-lang URL preserving path + other query params
+    var req = Context.Request;
+    var otherLang = isEn ? "pt" : "en";
+}
+<div id="lang-switcher">
+    <div class="ls-inner">
+        <a href="?lang=pt" class="ls-btn @(isEn?"":"ls-active")" title="Português">🇧🇷</a>
+        <a href="?lang=en" class="ls-btn @(isEn?"ls-active":"")" title="English">🇺🇸</a>
+    </div>
+</div>
+<style>
+#lang-switcher{position:fixed;bottom:24px;right:24px;z-index:999}
+.ls-inner{display:flex;flex-direction:column;gap:4px;background:rgba(14,11,5,.9);border:1px solid #5a4d20;padding:6px;box-shadow:0 4px 16px rgba(0,0,0,.8)}
+.ls-btn{display:flex;align-items:center;justify-content:center;width:36px;height:36px;font-size:1.3rem;text-decoration:none;border:1px solid transparent;transition:all .15s;opacity:.5;border-radius:2px}
+.ls-btn:hover{opacity:1;border-color:#8b7535;background:rgba(255,209,0,.08)}
+.ls-btn.ls-active{opacity:1;border-color:#ffd100;background:rgba(255,209,0,.1)}
+</style>
