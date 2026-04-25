@@ -2,7 +2,7 @@
 @model WowEvolved.Models.ComparisonResult
 @using WowEvolved.Services
 @{
-    ViewData["Title"] = "Análise — WoW Evolved";
+    ViewData["Title"] = "Analysis — WoW Evolved";
     Layout = null;
     var langCode = ViewBag.Lang as string ?? "pt";
     var lang = langCode == "en" ? Lang.EN : Lang.PT;
@@ -12,593 +12,877 @@
     var winner = Model.Winner;
     var loser  = Model.Loser;
     bool p1wins = ReferenceEquals(winner, p1);
+
+    // Serialize skill data for charts
+    var skillJson = System.Text.Json.JsonSerializer.Serialize(
+        Model.SkillDiffs.Take(15).Select(d => new {
+            name = d.Name.Length > 22 ? d.Name[..22] + "…" : d.Name,
+            fullName = d.Name,
+            p1dps = Math.Round(d.P1Dps),
+            p2dps = Math.Round(d.P2Dps),
+            p1crit = Math.Round(d.P1Crit, 1),
+            p2crit = Math.Round(d.P2Crit, 1),
+            p1uptime = Math.Round(d.P1Uptime, 1),
+            p2uptime = Math.Round(d.P2Uptime, 1),
+            lost = Math.Round(d.EstDpsLost),
+            priority = d.Priority
+        }));
+
+    // Donut data — top 8 abilities by DPS for each player
+    var donut1 = System.Text.Json.JsonSerializer.Serialize(
+        p1.Records.OrderByDescending(r => r.DpsNum).Take(8)
+            .Select(r => new { name = r.Name.Length > 18 ? r.Name[..18]+"…" : r.Name, val = Math.Round(r.DpsNum), pct = Math.Round(r.Pct,1) }));
+    var donut2 = System.Text.Json.JsonSerializer.Serialize(
+        p2.Records.OrderByDescending(r => r.DpsNum).Take(8)
+            .Select(r => new { name = r.Name.Length > 18 ? r.Name[..18]+"…" : r.Name, val = Math.Round(r.DpsNum), pct = Math.Round(r.Pct,1) }));
+
 }
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="@langCode">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Análise — WoW Evolved</title>
-<link href="https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap" rel="stylesheet">
+<title>WoW Evolved — Report</title>
+<link href="https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;600;700&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
 <style>
+/* ── Power BI inspired palette ────────────────────────────────────────────── */
 :root{
-  --wow-bg:#1a1209;--wow-bg2:#0e0b05;
-  --wow-border:#8b7535;--wow-border2:#5a4d20;
-  --wow-gold:#ffd100;--wow-gold2:#c8a800;--wow-gold3:#7a6510;
-  --wow-text:#ffd880;--wow-text2:#c8a860;--wow-text3:#8a7040;
-  --wow-red:#c41e3a;--wow-green:#1eff00;--wow-blue:#0070dd;
-  --wow-purple:#a335ee;--wow-orange:#ff8000;--wow-grey:#9d9d9d;
-  --wow-white:#ffffff;
-  --panel-inner:#0d0a04;--inset-dark:#080603;
-  --c-critical:#c41e3a;--c-high:#ff8000;--c-normal:#1eff00;
+  --bg:         #0e0b05;
+  --bg-panel:   #1a1510;
+  --bg-card:    #141008;
+  --bg-chart:   #0a0804;
+  --bdr:        #2a2010;
+  --bdr-gold:   #8b7535;
+  --gold:       #ffd100;
+  --gold2:      #c8a800;
+  --gold-dim:   #7a6510;
+  --blue:       #4fc3f7;
+  --blue2:      #0288d1;
+  --red:        #ef5350;
+  --red2:       #c41e3a;
+  --green:      #66bb6a;
+  --orange:     #ffa726;
+  --purple:     #ab47bc;
+  --teal:       #26c6da;
+  --txt:        #e8dcc8;
+  --txt2:       #b8a880;
+  --txt3:       #786848;
+  --txt-dim:    #4a3820;
+  /* chart colors */
+  --c1: #4fc3f7;
+  --c2: #ffd100;
+  --c3: #ef5350;
+  --c4: #66bb6a;
+  --c5: #ffa726;
+  --c6: #ab47bc;
+  --c7: #26c6da;
+  --c8: #ff7043;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{
-  background:var(--wow-bg2);color:var(--wow-text);
-  font-family:'Times New Roman',Times,serif;min-height:100vh;
-  background-image:radial-gradient(ellipse 80% 40% at 50% -5%,rgba(255,209,0,0.05) 0%,transparent 55%);
+  background:var(--bg);
+  color:var(--txt);
+  font-family:'Segoe UI','Times New Roman',sans-serif;
+  min-height:100vh;
+  font-size:14px;
 }
-.container{max-width:1180px;margin:0 auto;padding:0 20px 60px;}
 
-/* ── Nav ── */
-.top-nav{
+/* ── Layout ── */
+.page{max-width:1400px;margin:0 auto;padding:0 16px 60px}
+
+/* ── Top bar ── */
+.topbar{
   display:flex;align-items:center;justify-content:space-between;
-  padding:16px 0;border-bottom:2px solid var(--wow-border2);margin-bottom:28px;
+  padding:14px 0;
+  border-bottom:1px solid var(--bdr);
+  margin-bottom:20px;
 }
-.nav-logo{
-  font-size:1.1rem;font-weight:bold;letter-spacing:0.1em;text-transform:uppercase;
-  background:linear-gradient(180deg,#fff5a0,#ffd100,#7a6510);
+.tb-logo{
+  font-family:'Cinzel',serif;font-size:1rem;font-weight:700;
+  background:linear-gradient(135deg,#fff5a0,#ffd100,#7a6510);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  letter-spacing:.08em;
 }
-.wow-back{
-  padding:5px 16px;
-  background:linear-gradient(180deg,#2a2000 0%,#1a1400 100%);
-  border:1px solid var(--wow-border2);
-  color:var(--wow-gold2);font-size:0.75rem;
-  letter-spacing:0.2em;text-transform:uppercase;
-  text-decoration:none;transition:all 0.15s;
+.tb-right{display:flex;align-items:center;gap:10px}
+.tb-back{
+  padding:5px 14px;background:transparent;border:1px solid var(--bdr-gold);
+  color:var(--gold-dim);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+  text-decoration:none;transition:all .15s;font-family:'Cinzel',serif;
 }
-.wow-back:hover{border-color:var(--wow-border);color:var(--wow-gold);}
+.tb-back:hover{border-color:var(--gold);color:var(--gold)}
 
-/* ── Hero verdict ── */
-.hero-verdict{text-align:center;margin-bottom:32px;}
-.boss-tag{
-  font-size:0.7rem;letter-spacing:0.4em;color:var(--wow-gold3);
-  text-transform:uppercase;margin-bottom:10px;
+/* ── Report header ── */
+.report-header{
+  background:linear-gradient(135deg,#1c1608 0%,#0a0804 100%);
+  border:1px solid var(--bdr);
+  border-left:4px solid var(--gold2);
+  padding:18px 24px;margin-bottom:16px;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
 }
-.verdict-line{
-  font-size:clamp(1.3rem,3.5vw,2rem);font-weight:bold;
-  text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;
+.rh-title{font-family:'Cinzel',serif;font-size:.68rem;letter-spacing:.35em;text-transform:uppercase;color:var(--gold-dim);margin-bottom:4px}
+.rh-verdict{font-size:1.2rem;font-weight:600;color:var(--txt)}
+.rh-verdict .loser-name{color:var(--red)}
+.rh-verdict .winner-name{color:var(--gold)}
+.rh-badge{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(239,83,80,.12);border:1px solid var(--red2);
+  padding:6px 16px;
 }
-.vl-loser{color:var(--wow-red);text-shadow:0 0 16px rgba(196,30,58,0.5);}
-.vl-winner{color:var(--wow-gold);text-shadow:0 0 16px rgba(255,209,0,0.5);}
-.vl-sep{color:var(--wow-text3);font-size:0.7em;}
-.diff-pill{
-  display:inline-block;margin-top:10px;
-  padding:4px 18px;
-  background:rgba(196,30,58,0.18);border:1px solid var(--wow-red);
-  color:#ff8888;font-size:0.78rem;letter-spacing:0.2em;
-}
+.rh-badge-val{font-size:1.4rem;font-weight:700;color:var(--red)}
+.rh-badge-lbl{font-size:.68rem;color:var(--txt3);text-transform:uppercase;letter-spacing:.12em}
 
-/* ── WoW divider ── */
-.wow-div{display:flex;align-items:center;gap:0;margin:20px 0;}
-.wow-div .l{flex:1;height:2px;background:linear-gradient(90deg,transparent,var(--wow-border2),var(--wow-border),var(--wow-border2),transparent);}
-.wow-div .g{width:12px;height:12px;background:radial-gradient(circle at 35% 35%,#ffe066,#c8a800,#5a4500);transform:rotate(45deg);border:1px solid var(--wow-border);box-shadow:0 0 8px rgba(255,209,0,0.6);flex-shrink:0;}
+/* ── Section label ── */
+.sec{
+  font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.32em;
+  text-transform:uppercase;color:var(--gold-dim);
+  padding:6px 0 10px;
+  display:flex;align-items:center;gap:10px;
+}
+.sec::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--bdr),transparent)}
 
-/* ── Section title ── */
-.sec-hdr{
-  background:linear-gradient(90deg,#1a1200,#0e0900);
-  border-left:3px solid var(--wow-gold2);
-  border-top:1px solid var(--wow-border2);
-  border-bottom:1px solid var(--wow-border2);
-  padding:7px 16px;
-  font-size:0.78rem;letter-spacing:0.3em;color:var(--wow-gold);
-  text-transform:uppercase;font-weight:bold;
-  margin-bottom:14px;display:flex;align-items:center;gap:8px;
+/* ── KPI row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:16px}
+.kpi{
+  background:var(--bg-card);border:1px solid var(--bdr);
+  padding:14px 16px;position:relative;overflow:hidden;
 }
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.kpi.blue::before{background:var(--blue)}
+.kpi.gold::before{background:var(--gold)}
+.kpi.green::before{background:var(--green)}
+.kpi.orange::before{background:var(--orange)}
+.kpi.red::before{background:var(--red)}
+.kpi.purple::before{background:var(--purple)}
+.kpi-label{font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--txt3);margin-bottom:6px}
+.kpi-vals{display:flex;gap:10px;align-items:baseline}
+.kpi-v1{font-size:1.2rem;font-weight:700}
+.kpi-sep{font-size:.75rem;color:var(--txt3)}
+.kpi-v2{font-size:1.2rem;font-weight:700}
+.kpi-v1.win{color:var(--blue)}
+.kpi-v2.win{color:var(--gold)}
+.kpi-delta{font-size:.72rem;margin-top:4px}
+.kpi-delta.pos{color:var(--green)}
+.kpi-delta.neg{color:var(--red)}
+.kpi-names{font-size:.65rem;color:var(--txt3);margin-top:3px;display:flex;gap:8px}
+.kpi-n1{color:var(--blue)}
+.kpi-n2{color:var(--gold)}
 
-/* ── Scoreboard ── */
-.scoreboard{
-  display:grid;grid-template-columns:1fr auto 1fr;
-  gap:2px;background:var(--wow-border2);
-  border:2px solid var(--wow-border);
-  margin-bottom:28px;
+/* ── Chart grid ── */
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.chart-grid-3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-bottom:16px}
+.chart-box{
+  background:var(--bg-card);border:1px solid var(--bdr);
+  padding:16px;position:relative;
 }
-.score-panel{
-  background:var(--panel-inner);
-  padding:22px 20px;
-  position:relative;
+.chart-box.full{grid-column:1/-1}
+.chart-title{
+  font-family:'Cinzel',serif;font-size:.63rem;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--gold-dim);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
 }
-.score-panel.is-winner::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,transparent,var(--wow-gold),transparent);
-}
-.score-panel.is-loser::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:3px;
-  background:linear-gradient(90deg,transparent,var(--wow-red),transparent);
-}
-.crown-icon{font-size:1.2rem;display:block;margin-bottom:4px;}
-.player-nm{
-  font-size:1.15rem;font-weight:bold;letter-spacing:0.06em;
-  text-transform:uppercase;margin-bottom:14px;
-}
-.is-winner .player-nm{color:var(--wow-gold);}
-.is-loser  .player-nm{color:#e08080;}
+.chart-subtitle{font-size:.68rem;color:var(--txt3)}
 
-.stat-tbl{width:100%;border-collapse:collapse;}
-.stat-tbl tr{border-bottom:1px solid rgba(255,209,0,0.06);}
-.stat-tbl tr:last-child{border-bottom:none;}
-.stat-tbl td{padding:6px 4px;font-size:0.88rem;vertical-align:middle;}
-.stat-lbl{color:var(--wow-text3);font-size:0.72rem;letter-spacing:0.12em;text-transform:uppercase;}
-.stat-val{text-align:right;font-weight:bold;}
-.is-winner .stat-val{color:var(--wow-gold2);}
-.is-loser  .stat-val{color:#e08080;}
-.stat-bar-wrap{width:80px;text-align:right;}
-.stat-bar{height:6px;border-radius:1px;display:inline-block;margin-top:4px;}
-.is-winner .stat-bar{background:linear-gradient(90deg,var(--wow-gold3),var(--wow-gold));}
-.is-loser  .stat-bar{background:linear-gradient(90deg,#6a0015,var(--wow-red));}
-.eff-badge{
-  display:inline-block;padding:2px 10px;
-  font-size:0.8rem;font-weight:bold;margin-top:4px;
-  border:1px solid;
-}
-.is-winner .eff-badge{color:var(--wow-gold);border-color:var(--wow-gold2);background:rgba(255,209,0,0.08);}
-.is-loser  .eff-badge{color:#e08080;border-color:var(--wow-red);background:rgba(196,30,58,0.08);}
+/* ── Legend ── */
+.legend{display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.leg{display:flex;align-items:center;gap:5px;font-size:.7rem;color:var(--txt2)}
+.leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
 
-.score-vs{
-  background:var(--panel-inner);
-  display:flex;align-items:center;justify-content:center;min-width:50px;
+/* ── Insight cards ── */
+.insight-row{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.ins-card{
+  background:var(--bg-card);border:1px solid var(--bdr);
+  border-left:3px solid var(--bdr-gold);
+  padding:10px 16px;font-size:.88rem;line-height:1.55;
+  transition:border-color .15s;
 }
-.vs-lbl{font-size:1.1rem;font-weight:bold;color:var(--wow-red);text-shadow:0 0 12px rgba(196,30,58,0.6);}
+.ins-card:hover{border-left-color:var(--gold)}
 
-/* ── Insights ── */
-.insights-list{display:flex;flex-direction:column;gap:6px;margin-bottom:28px;}
-.insight-row{
-  background:var(--panel-inner);
-  border:1px solid var(--wow-border2);
-  border-left:4px solid var(--wow-border2);
-  padding:10px 14px;
-  font-size:0.9rem;line-height:1.55;
-  transition:border-color 0.15s;
+/* ── Suggestion cards ── */
+.sug-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-bottom:16px}
+.sug-card{background:var(--bg-card);border:1px solid var(--bdr);overflow:hidden}
+.sug-card::before{content:'';display:block;height:3px}
+.sug-card.prio-critical::before{background:linear-gradient(90deg,var(--red),#ff6060)}
+.sug-card.prio-high::before{background:linear-gradient(90deg,var(--orange),#ffcc02)}
+.sug-card.prio-normal::before{background:linear-gradient(90deg,var(--blue),#80d8ff)}
+.sug-hdr{
+  padding:10px 14px 7px;display:flex;align-items:center;gap:8px;
+  justify-content:space-between;border-bottom:1px solid var(--bdr);
 }
-.insight-row:hover{border-left-color:var(--wow-gold2);}
-
-/* ── Suggestions ── */
-.sug-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-bottom:28px;}
-.sug-card{
-  background:var(--panel-inner);
-  border:1px solid var(--wow-border2);
-  position:relative;overflow:hidden;
-}
-.sug-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;}
-.sug-card.prio-critical::before{background:linear-gradient(90deg,var(--wow-red),#ff4060);}
-.sug-card.prio-high::before{background:linear-gradient(90deg,var(--wow-orange),#ffb040);}
-.sug-card.prio-normal::before{background:linear-gradient(90deg,var(--wow-blue),#40a0ff);}
-
-.sug-header{
-  padding:10px 14px 6px;
-  display:flex;align-items:center;gap:8px;justify-content:space-between;
-  border-bottom:1px solid rgba(255,209,0,0.07);
-}
-.sug-skill{font-size:0.88rem;font-weight:bold;color:var(--wow-text);}
+.sug-skill{font-size:.88rem;font-weight:600;color:var(--txt)}
 .sug-cat{
-  font-size:0.62rem;letter-spacing:0.2em;text-transform:uppercase;
-  padding:2px 8px;border:1px solid;border-radius:1px;
+  font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;
+  padding:2px 8px;border:1px solid;border-radius:2px;white-space:nowrap;
 }
-.prio-critical .sug-cat{color:var(--wow-red);border-color:var(--wow-red);background:rgba(196,30,58,0.12);}
-.prio-high     .sug-cat{color:var(--wow-orange);border-color:var(--wow-orange);background:rgba(255,128,0,0.1);}
-.prio-normal   .sug-cat{color:var(--wow-blue);border-color:var(--wow-blue);background:rgba(0,112,221,0.1);}
-
-.sug-body{padding:10px 14px;}
-.sug-row{display:flex;gap:6px;margin-bottom:7px;font-size:0.84rem;line-height:1.5;}
-.sug-icon{flex-shrink:0;width:16px;text-align:center;margin-top:2px;}
-.sug-txt b{color:var(--wow-text2);}
-.sug-dps{
+.prio-critical .sug-cat{color:var(--red);border-color:var(--red);background:rgba(239,83,80,.1)}
+.prio-high     .sug-cat{color:var(--orange);border-color:var(--orange);background:rgba(255,167,38,.1)}
+.prio-normal   .sug-cat{color:var(--blue);border-color:var(--blue);background:rgba(79,195,247,.08)}
+.sug-body{padding:10px 14px}
+.sug-row{display:flex;gap:6px;margin-bottom:6px;font-size:.82rem;line-height:1.5;color:var(--txt2)}
+.sug-row b{color:var(--txt)}
+.sug-gain{
   margin-top:8px;padding:5px 10px;
-  background:rgba(255,209,0,0.04);border:1px solid rgba(255,209,0,0.12);
-  font-size:0.78rem;display:flex;align-items:center;justify-content:space-between;
+  background:rgba(255,209,0,.04);border:1px solid rgba(255,209,0,.1);
+  display:flex;justify-content:space-between;align-items:center;
 }
-.sug-dps-lbl{color:var(--wow-text3);letter-spacing:0.12em;text-transform:uppercase;font-size:0.68rem;}
-.sug-dps-val{color:var(--wow-gold);font-weight:bold;}
+.sug-gain-lbl{font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--txt3)}
+.sug-gain-val{font-size:.9rem;font-weight:700;color:var(--gold)}
 
 /* ── Skill table ── */
-.tbl-wrap{
-  background:var(--panel-inner);
-  border:1px solid var(--wow-border2);
-  overflow-x:auto;
-  margin-bottom:28px;
-}
-.tbl-legend{
-  display:flex;gap:20px;padding:8px 14px;
-  border-bottom:1px solid rgba(255,209,0,0.08);
-}
-.leg-item{display:flex;align-items:center;gap:6px;font-size:0.68rem;letter-spacing:0.14em;text-transform:uppercase;color:var(--wow-text3);}
-.leg-dot{width:10px;height:10px;}
-.dot-loser{background:var(--wow-red);}
-.dot-winner{background:var(--wow-gold);}
-
-.skill-tbl{width:100%;border-collapse:collapse;min-width:700px;}
+.tbl-wrap{background:var(--bg-card);border:1px solid var(--bdr);overflow-x:auto;margin-bottom:16px}
+.skill-tbl{width:100%;border-collapse:collapse;min-width:700px}
 .skill-tbl th{
-  background:linear-gradient(180deg,#1c1508,#0e0900);
-  font-size:0.65rem;letter-spacing:0.18em;text-transform:uppercase;
-  color:var(--wow-gold3);font-weight:bold;
-  padding:8px 10px;text-align:left;border-bottom:2px solid var(--wow-border2);
+  background:#0a0804;font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--txt3);padding:9px 10px;text-align:left;
+  border-bottom:1px solid var(--bdr);position:sticky;top:0;
 }
-.skill-tbl th.r{text-align:right;}
-.skill-tbl td{padding:7px 10px;font-size:0.84rem;border-bottom:1px solid rgba(255,209,0,0.04);}
-.skill-tbl tr:last-child td{border-bottom:none;}
-.skill-tbl tr:hover td{background:rgba(255,209,0,0.02);}
+.skill-tbl th.r{text-align:right}
+.skill-tbl td{padding:8px 10px;font-size:.84rem;border-bottom:1px solid rgba(255,255,255,.03)}
+.skill-tbl tr:last-child td{border-bottom:none}
+.skill-tbl tr:hover td{background:rgba(255,209,0,.02)}
+.sk-name{color:var(--txt);font-weight:500}
+.sk-note{font-size:.7rem;color:var(--txt3);margin-top:2px}
+.td-r{text-align:right;font-variant-numeric:tabular-nums}
+.col-p1{color:var(--blue)}
+.col-p2{color:var(--gold)}
+.col-up{color:var(--green)}
+.col-dn{color:var(--red)}
+.lost-val{color:var(--orange);font-weight:600}
+.prio-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.pd-critical{background:var(--red);box-shadow:0 0 4px var(--red)}
+.pd-high{background:var(--orange)}
+.pd-normal{background:var(--blue)}
 
-.sk-name{color:var(--wow-text);font-weight:bold;}
-.sk-note{font-size:0.72rem;color:var(--wow-text3);margin-top:2px;font-weight:normal;}
+/* mini bar */
+.mini-bar-wrap{display:flex;gap:1px;height:10px;border-radius:1px;overflow:hidden;background:rgba(0,0,0,.3);width:80px}
+.mb1{background:var(--blue);border-radius:1px}
+.mb2{background:var(--gold);border-radius:1px}
 
-.prio-ind{
-  display:inline-block;width:8px;height:8px;border-radius:50%;
-  margin-right:6px;vertical-align:middle;flex-shrink:0;
+/* ── Phase notes ── */
+.phase-row{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.phase-card{
+  background:var(--bg-card);border:1px solid var(--bdr);
+  border-left:3px solid var(--gold-dim);padding:10px 16px;
+  display:flex;gap:14px;align-items:baseline;
 }
-.pi-critical{background:var(--wow-red);box-shadow:0 0 5px var(--wow-red);}
-.pi-high{background:var(--wow-orange);box-shadow:0 0 5px var(--wow-orange);}
-.pi-normal{background:var(--wow-blue);}
-
-.td-r{text-align:right;font-variant-numeric:tabular-nums;}
-.col-p1{color:#e08080;}
-.col-p2{color:var(--wow-gold2);}
-.col-up{color:var(--wow-green);}
-.col-dn{color:var(--wow-red);}
-
-.bar-cell{width:100px;}
-.bar-wrap{display:flex;gap:1px;height:12px;background:rgba(0,0,0,0.4);border-radius:1px;overflow:hidden;}
-.bw{border-radius:1px;}
-.bw-loser{background:rgba(196,30,58,0.65);}
-.bw-winner{background:rgba(255,209,0,0.65);}
-
-.lost-cell{text-align:right;font-variant-numeric:tabular-nums;color:var(--wow-orange);font-weight:bold;}
-
-/* ── Crit / Uptime mini cols ── */
-.crit-good{color:var(--wow-green);}
-.crit-bad{color:var(--wow-red);}
-.crit-same{color:var(--wow-text3);}
-
-/* ── Top10 tables ── */
-.dual-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px;}
-.mini-tbl-wrap{background:var(--panel-inner);border:1px solid var(--wow-border2);overflow:hidden;}
-.mini-tbl-hdr{
-  padding:7px 12px;font-size:0.72rem;letter-spacing:0.2em;text-transform:uppercase;
-  color:var(--wow-gold);font-weight:bold;
-  background:linear-gradient(90deg,#1a1200,#0e0900);
-  border-bottom:1px solid var(--wow-border2);
+.phase-name{
+  font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--gold2);white-space:nowrap;min-width:110px;
 }
-.mini-tbl{width:100%;border-collapse:collapse;}
-.mini-tbl td{padding:6px 10px;font-size:0.82rem;border-bottom:1px solid rgba(255,209,0,0.04);}
-.mini-tbl tr:last-child td{border-bottom:none;}
-.mini-tbl .sk{color:var(--wow-text);}
-.mini-tbl .dv1{text-align:right;color:#e08080;font-weight:bold;}
-.mini-tbl .dv2{text-align:right;color:var(--wow-gold2);font-weight:bold;}
-.mini-tbl .pct{text-align:right;color:var(--wow-text3);font-size:0.75rem;}
+.phase-note{font-size:.86rem;color:var(--txt2);line-height:1.5}
+
+/* ── Priority table ── */
+.prio-tbl{width:100%;border-collapse:collapse}
+.prio-tbl th{background:#0a0804;font-size:.62rem;letter-spacing:.18em;text-transform:uppercase;color:var(--txt3);padding:8px 10px;text-align:left;border-bottom:1px solid var(--bdr)}
+.prio-tbl td{padding:8px 10px;font-size:.84rem;border-bottom:1px solid rgba(255,255,255,.03)}
+.prio-tbl tr:last-child td{border-bottom:none}
 
 /* ── Trophy ── */
-.trophy-box{
-  background:linear-gradient(180deg,#1a1200,#0e0900);
-  border:2px solid var(--wow-border);
-  text-align:center;padding:28px;position:relative;
-  margin-bottom:28px;
+.trophy{
+  background:linear-gradient(135deg,#1c1608,#0a0804);
+  border:1px solid var(--bdr-gold);
+  text-align:center;padding:28px;position:relative;margin-bottom:16px;
 }
-.trophy-box::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--wow-gold),transparent);}
-.trophy-ico{font-size:2.8rem;display:block;margin-bottom:10px;filter:drop-shadow(0 0 12px rgba(255,209,0,0.6));}
-.trophy-lbl{font-size:0.7rem;letter-spacing:0.35em;color:var(--wow-gold3);text-transform:uppercase;margin-bottom:4px;}
-.trophy-nm{font-size:1.8rem;font-weight:bold;color:var(--wow-gold);text-shadow:0 0 18px rgba(255,209,0,0.5);text-transform:uppercase;letter-spacing:0.08em;}
+.trophy::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.trophy-ico{font-size:2.4rem;display:block;margin-bottom:10px;filter:drop-shadow(0 0 10px rgba(255,209,0,.6))}
+.trophy-lbl{font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:.35em;color:var(--gold-dim);text-transform:uppercase;margin-bottom:4px}
+.trophy-nm{font-size:1.7rem;font-weight:700;color:var(--gold);text-shadow:0 0 16px rgba(255,209,0,.4);text-transform:uppercase;letter-spacing:.08em;font-family:'Cinzel',serif}
 
-/* ── Est DPS summary bar ── */
-.dps-loss-bar{
-  background:var(--panel-inner);border:1px solid var(--wow-border2);
-  padding:14px 18px;margin-bottom:28px;
-  display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+/* ── Tabs ── */
+.tabs{display:flex;gap:2px;margin-bottom:0;border-bottom:1px solid var(--bdr)}
+.tab{
+  padding:8px 18px;font-family:'Cinzel',serif;font-size:.63rem;
+  letter-spacing:.2em;text-transform:uppercase;cursor:pointer;
+  color:var(--txt3);border-bottom:2px solid transparent;
+  transition:all .15s;background:none;border-top:none;border-left:none;border-right:none;
+  margin-bottom:-1px;
 }
-.dpl-icon{font-size:1.3rem;}
-.dpl-text{flex:1;min-width:200px;}
-.dpl-title{font-size:0.72rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--wow-gold);font-weight:bold;margin-bottom:2px;}
-.dpl-val{font-size:1.1rem;color:var(--wow-orange);font-weight:bold;}
-.dpl-sub{font-size:0.78rem;color:var(--wow-text3);}
+.tab:hover{color:var(--txt2)}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-content{display:none;padding-top:16px}
+.tab-content.active{display:block}
 
-footer{text-align:center;padding:22px 0 0;font-size:0.7rem;letter-spacing:0.12em;color:var(--wow-text3);border-top:1px solid var(--wow-border2);}
-footer a{color:var(--wow-gold3);text-decoration:none;}
-footer a:hover{color:var(--wow-gold);}
+/* ── Canvas containers ── */
+canvas{display:block}
 
-@@media(max-width:700px){
-  .scoreboard{grid-template-columns:1fr;}
-  .score-vs{padding:10px;}
-  .dual-grid{grid-template-columns:1fr;}
-  .sug-grid{grid-template-columns:1fr;}
-}
+footer{text-align:center;padding:20px 0 0;font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.1em;color:var(--txt3);border-top:1px solid var(--bdr)}
+footer a{color:var(--gold-dim);text-decoration:none}
+footer a:hover{color:var(--gold)}
+
+@@media(max-width:900px){.chart-grid,.chart-grid-3{grid-template-columns:1fr}.chart-box.full{grid-column:auto}.kpi-row{grid-template-columns:repeat(2,1fr)}}
+@@media(max-width:500px){.kpi-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="container">
+@await Html.PartialAsync("_LangSwitcher")
+<div class="page">
 
-  <!-- Nav -->
-  @await Html.PartialAsync("_LangSwitcher")
-  <nav class="top-nav">
-    <div class="nav-logo">⚔ WoW Evolved</div>
-    <a href="@backUrl" class="wow-back">@LocalizationService.UI.BackBtn(lang)</a>
-  </nav>
-
-  <!-- Hero -->
-  <div class="hero-verdict">
-    <div class="boss-tag">@LocalizationService.UI.BossTag(lang)</div>
-    <div class="verdict-line">
-      <span class="vl-loser">@loser.PlayerName</span>
-      <span class="vl-sep"> @LocalizationService.UI.LostLabel(lang) </span>
-      <span class="vl-winner">@winner.PlayerName</span>
-    </div>
-    <div class="diff-pill">▼ @Model.DiffPercent.ToString("F1")% @LocalizationService.UI.DiffLess(lang)</div>
-  </div>
-
-  <div class="wow-div"><div class="l"></div><div class="g"></div><div class="l"></div></div>
-
-  <!-- Scoreboard -->
-  <div class="scoreboard">
-    <div class="score-panel @(p1wins ? "is-winner" : "is-loser")">
-      @if (p1wins){ <span class="crown-icon">👑</span> }
-      <div class="player-nm">@p1.PlayerName</div>
-        @if(p1.ActiveSpec.ClassName != "Unknown"){<div style="font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.18em;color:var(--wow-gold3);text-transform:uppercase;margin-bottom:10px;">@p1.ActiveSpec.ClassName — @p1.ActiveSpec.SpecName (@p1.ActiveSpec.Archetype)</div>}else{<div style="font-size:.72rem;color:var(--wow-text3);margin-bottom:10px;font-style:italic;">Classe não detectada — análise universal</div>}
-      <table class="stat-tbl">
-        <tr><td class="stat-lbl">@LocalizationService.UI.TotalDmg(lang)</td><td class="stat-val">@p1.TotalDamage.ToString("N0")</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.TotalDps(lang)</td><td class="stat-val">@p1.TotalDps.ToString("N0")</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.FightDur(lang)</td><td class="stat-val">~@p1.FightDuration.ToString("F0")s</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.AvgCrit(lang)</td><td class="stat-val">@p1.AvgCritPct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.AvgUptime(lang)</td><td class="stat-val">@p1.AvgUptimePct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.AvgMiss(lang)</td><td class="stat-val">@p1.AvgMissPct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">@LocalizationService.UI.Abilities(lang)</td><td class="stat-val">@p1.Records.Count</td></tr>
-        <tr>
-          <td class="stat-lbl">@LocalizationService.UI.EffScore(lang)</td>
-          <td class="stat-val"><span class="eff-badge">@p1.EfficiencyScore.ToString("F1") / 100</span></td>
-        </tr>
-      </table>
-    </div>
-    <div class="score-vs"><div class="vs-lbl">VS</div></div>
-    <div class="score-panel @(!p1wins ? "is-winner" : "is-loser")">
-      @if (!p1wins){ <span class="crown-icon">👑</span> }
-      <div class="player-nm">@p2.PlayerName</div>
-        @if(p2.ActiveSpec.ClassName != "Unknown"){<div style="font-family:'Cinzel',serif;font-size:.62rem;letter-spacing:.18em;color:var(--wow-gold3);text-transform:uppercase;margin-bottom:10px;">@p2.ActiveSpec.ClassName — @p2.ActiveSpec.SpecName (@p2.ActiveSpec.Archetype)</div>}else{<div style="font-size:.72rem;color:var(--wow-text3);margin-bottom:10px;font-style:italic;">Classe não detectada — análise universal</div>}
-      <table class="stat-tbl">
-        <tr><td class="stat-lbl">Dano Total</td><td class="stat-val">@p2.TotalDamage.ToString("N0")</td></tr>
-        <tr><td class="stat-lbl">DPS Total</td><td class="stat-val">@p2.TotalDps.ToString("N0")</td></tr>
-        <tr><td class="stat-lbl">Duração Fight</td><td class="stat-val">~@p2.FightDuration.ToString("F0")s</td></tr>
-        <tr><td class="stat-lbl">Crit Médio</td><td class="stat-val">@p2.AvgCritPct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">Uptime Médio</td><td class="stat-val">@p2.AvgUptimePct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">Miss Médio</td><td class="stat-val">@p2.AvgMissPct.ToString("F1")%</td></tr>
-        <tr><td class="stat-lbl">Habilidades</td><td class="stat-val">@p2.Records.Count</td></tr>
-        <tr>
-          <td class="stat-lbl">Score Eficiência</td>
-          <td class="stat-val"><span class="eff-badge">@p2.EfficiencyScore.ToString("F1") / 100</span></td>
-        </tr>
-      </table>
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="tb-logo">⚔ WoW Evolved</div>
+    <div class="tb-right">
+      <a href="@backUrl" class="tb-back">@LocalizationService.UI.BackBtn(lang)</a>
     </div>
   </div>
 
-  <!-- DPS lost summary -->
-  @{
-    double totalLost = Model.SkillDiffs.Sum(d => {
-      bool loserP1 = ReferenceEquals(loser, p1);
-      double lDps = loserP1 ? d.P1Dps : d.P2Dps;
-      double wDps = loserP1 ? d.P2Dps : d.P1Dps;
-      return Math.Max(0, wDps - lDps);
-    });
-  }
-  <div class="dps-loss-bar">
-    <span class="dpl-icon">⚠️</span>
-    <div class="dpl-text">
-      <div class="dpl-title">@LocalizationService.UI.DpsLostTitle(lang) — @loser.PlayerName</div>
-      <div class="dpl-val">~@totalLost.ToString("N0") DPS</div>
-      <div class="dpl-sub">@LocalizationService.UI.DpsLostSub(lang, loser.PlayerName, winner.PlayerName)</div>
+  <!-- Report header -->
+  <div class="report-header">
+    <div>
+      <div class="rh-title">@LocalizationService.UI.BossTag(lang)</div>
+      <div class="rh-verdict">
+        <span class="loser-name">@loser.PlayerName</span>
+        <span style="color:var(--txt3);font-size:.85em"> @LocalizationService.UI.LostLabel(lang) </span>
+        <span class="winner-name">@winner.PlayerName</span>
+      </div>
+    </div>
+    <div class="rh-badge">
+      <div>
+        <div class="rh-badge-val">▼ @Model.DiffPercent.ToString("F1")%</div>
+        <div class="rh-badge-lbl">@LocalizationService.UI.DiffLess(lang)</div>
+      </div>
     </div>
   </div>
 
-  <!-- Insights -->
-  @if (Model.Insights.Any())
-  {
-    <div class="sec-hdr">@LocalizationService.UI.DiagTitle(lang)</div>
-    <div class="insights-list">
-      @foreach (var ins in Model.Insights)
-      {
-        <div class="insight-row">@ins</div>
+  <!-- ── SECTION: KPIs ── -->
+  <div class="sec">📊 @(lang==Lang.EN?"Key Performance Indicators":"Indicadores de Performance")</div>
+  <div class="kpi-row">
+    @{
+      void Kpi(string cls, string label, string v1, string v2, string delta="", bool deltaPos=false){
+        <div class="kpi @cls">
+          <div class="kpi-label">@label</div>
+          <div class="kpi-vals">
+            <span class="kpi-v1 @(p1wins?"win":"")">@v1</span>
+            <span class="kpi-sep">vs</span>
+            <span class="kpi-v2 @(!p1wins?"win":"")">@v2</span>
+          </div>
+          @if(!string.IsNullOrEmpty(delta)){
+            <div class="kpi-delta @(deltaPos?"pos":"neg")">@delta</div>
+          }
+          <div class="kpi-names">
+            <span class="kpi-n1">@p1.PlayerName</span>
+            <span class="kpi-sep">·</span>
+            <span class="kpi-n2">@p2.PlayerName</span>
+          </div>
+        </div>
       }
-    </div>
-  }
+    }
+    @{ Kpi("blue",  LocalizationService.UI.TotalDmg(lang),   p1.TotalDamage.ToString("N0"),  p2.TotalDamage.ToString("N0"),  $"Δ {Math.Abs(p1.TotalDamage-p2.TotalDamage):N0}", p1.TotalDamage>p2.TotalDamage); }
+    @{ Kpi("gold",  LocalizationService.UI.TotalDps(lang),   p1.TotalDps.ToString("N0"),     p2.TotalDps.ToString("N0"),     $"Δ {Math.Abs(p1.TotalDps-p2.TotalDps):N0}", p1.TotalDps>p2.TotalDps); }
+    @{ Kpi("green", LocalizationService.UI.EffScore(lang),   p1.EfficiencyScore.ToString("F1"), p2.EfficiencyScore.ToString("F1"), $"Δ {Math.Abs(p1.EfficiencyScore-p2.EfficiencyScore):F1}", p1.EfficiencyScore>p2.EfficiencyScore); }
+    @{ Kpi("orange",LocalizationService.UI.AvgCrit(lang),    p1.AvgCritPct.ToString("F1")+"%",  p2.AvgCritPct.ToString("F1")+"%",  $"Δ {Math.Abs(p1.AvgCritPct-p2.AvgCritPct):F1}%", p1.AvgCritPct>p2.AvgCritPct); }
+    @{ Kpi("purple",LocalizationService.UI.AvgUptime(lang),  p1.AvgUptimePct.ToString("F1")+"%",p2.AvgUptimePct.ToString("F1")+"%",$"Δ {Math.Abs(p1.AvgUptimePct-p2.AvgUptimePct):F1}%", p1.AvgUptimePct>p2.AvgUptimePct); }
+    @{ Kpi("red",   LocalizationService.UI.FightDur(lang),   "~"+p1.FightDuration.ToString("F0")+"s","~"+p2.FightDuration.ToString("F0")+"s"); }
+  </div>
 
-  <!-- Improvement suggestions -->
-  @if (Model.Suggestions.Any())
-  {
-    <div class="sec-hdr">
-      @LocalizationService.UI.ImpTitle(lang, loser.PlayerName)
-      <span style="font-size:0.6rem;letter-spacing:0.15em;color:var(--wow-text3);margin-left:auto;">
-        @LocalizationService.UI.PrioLegend(lang)
-      </span>
+  <!-- ── SECTION: Charts row 1 ── -->
+  <div class="sec">📈 @(lang==Lang.EN?"Visual Analysis":"Análise Visual")</div>
+
+  <div class="chart-grid-3">
+    <!-- Bar chart: DPS by ability -->
+    <div class="chart-box">
+      <div class="chart-title">
+        @(lang==Lang.EN?"DPS by Ability (Top 12)":"DPS por Habilidade (Top 12)")
+        <span class="chart-subtitle">@(lang==Lang.EN?"Horizontal bars":"Barras horizontais")</span>
+      </div>
+      <div class="legend">
+        <div class="leg"><div class="leg-dot" style="background:var(--blue)"></div>@p1.PlayerName</div>
+        <div class="leg"><div class="leg-dot" style="background:var(--gold)"></div>@p2.PlayerName</div>
+      </div>
+      <canvas id="barChart" height="320"></canvas>
+    </div>
+
+    <!-- Gauge P1 -->
+    <div class="chart-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div class="chart-title" style="width:100%">@(lang==Lang.EN?"Efficiency":"Eficiência") — @p1.PlayerName</div>
+      <canvas id="gauge1" width="160" height="160"></canvas>
+      <div style="text-align:center;margin-top:8px">
+        <div style="font-size:1.6rem;font-weight:700;color:var(--blue)">@p1.EfficiencyScore.ToString("F1")</div>
+        <div style="font-size:.65rem;color:var(--txt3);letter-spacing:.15em;text-transform:uppercase">/ 100</div>
+      </div>
+    </div>
+
+    <!-- Gauge P2 -->
+    <div class="chart-box" style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+      <div class="chart-title" style="width:100%">@(lang==Lang.EN?"Efficiency":"Eficiência") — @p2.PlayerName</div>
+      <canvas id="gauge2" width="160" height="160"></canvas>
+      <div style="text-align:center;margin-top:8px">
+        <div style="font-size:1.6rem;font-weight:700;color:var(--gold)">@p2.EfficiencyScore.ToString("F1")</div>
+        <div style="font-size:.65rem;color:var(--txt3);letter-spacing:.15em;text-transform:uppercase">/ 100</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <!-- Donut P1 -->
+    <div class="chart-box" style="display:flex;flex-direction:column">
+      <div class="chart-title">@(lang==Lang.EN?"Damage Distribution":"Distribuição de Dano") — @p1.PlayerName</div>
+      <div style="display:flex;align-items:center;gap:20px;flex:1">
+        <canvas id="donut1" width="160" height="160" style="flex-shrink:0"></canvas>
+        <div id="donut1-legend" style="font-size:.72rem;line-height:1.8;color:var(--txt2)"></div>
+      </div>
+    </div>
+
+    <!-- Donut P2 -->
+    <div class="chart-box" style="display:flex;flex-direction:column">
+      <div class="chart-title">@(lang==Lang.EN?"Damage Distribution":"Distribuição de Dano") — @p2.PlayerName</div>
+      <div style="display:flex;align-items:center;gap:20px;flex:1">
+        <canvas id="donut2" width="160" height="160" style="flex-shrink:0"></canvas>
+        <div id="donut2-legend" style="font-size:.72rem;line-height:1.8;color:var(--txt2)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Uptime heatmap -->
+  <div class="chart-box" style="margin-bottom:16px">
+    <div class="chart-title">
+      @(lang==Lang.EN?"Uptime Heatmap — both players":"Heatmap de Uptime — ambos jogadores")
+      <span class="chart-subtitle">@(lang==Lang.EN?"Green = high uptime · Red = low":"Verde = alto · Vermelho = baixo")</span>
+    </div>
+    <canvas id="heatmap" height="90"></canvas>
+  </div>
+
+  <!-- DPS Lost bar -->
+  <div class="chart-box" style="margin-bottom:16px">
+    <div class="chart-title">
+      ⚠️ @LocalizationService.UI.DpsLostTitle(lang) — @loser.PlayerName
+      <span style="color:var(--orange);font-size:.9rem;font-weight:700">~@Model.SkillDiffs.Sum(d=>{bool lp1=ReferenceEquals(loser,p1);double ld=lp1?d.P1Dps:d.P2Dps,wd=lp1?d.P2Dps:d.P1Dps;return Math.Max(0,wd-ld);}).ToString("N0") DPS</span>
+    </div>
+    <canvas id="lostChart" height="180"></canvas>
+  </div>
+
+  <!-- ── SECTION: Tabs ── -->
+  <div class="sec">🔍 @(lang==Lang.EN?"Detailed Report":"Relatório Detalhado")</div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('insights',this)">@(lang==Lang.EN?"Diagnosis":"Diagnóstico")</button>
+    <button class="tab" onclick="switchTab('suggestions',this)">@(lang==Lang.EN?"Improvement Plan":"Plano de Melhoria")</button>
+    <button class="tab" onclick="switchTab('skilltable',this)">@(lang==Lang.EN?"Skill Table":"Tabela de Habilidades")</button>
+    @if(loser.ActiveSpec.IsCustom && loser.ActiveSpec.CustomPhaseNotes.Any()){
+      <button class="tab" onclick="switchTab('phases',this)">@(lang==Lang.EN?"Phase Notes":"Fases do Boss")</button>
+    }
+    @if(loser.ActiveSpec.IsCustom && loser.ActiveSpec.CustomPriorityList.Any()){
+      <button class="tab" onclick="switchTab('priority',this)">Priority List</button>
+    }
+  </div>
+
+  <!-- Insights tab -->
+  <div class="tab-content active" id="tab-insights">
+    <div class="insight-row">
+      @foreach(var ins in Model.Insights){ <div class="ins-card">@ins</div> }
+    </div>
+  </div>
+
+  <!-- Suggestions tab -->
+  <div class="tab-content" id="tab-suggestions">
+    <div style="font-family:'Cinzel',serif;font-size:.6rem;letter-spacing:.18em;color:var(--txt3);text-transform:uppercase;margin-bottom:12px">
+      @LocalizationService.UI.ImpTitle(lang, loser.PlayerName) — @LocalizationService.UI.PrioLegend(lang)
     </div>
     <div class="sug-grid">
-      @foreach (var s in Model.Suggestions)
-      {
+      @foreach(var s in Model.Suggestions){
         <div class="sug-card prio-@s.Priority">
-          <div class="sug-header">
+          <div class="sug-hdr">
             <span class="sug-skill">
-              <span class="prio-ind pi-@s.Priority"></span>@s.Skill
+              <span class="prio-dot pd-@s.Priority"></span>@s.Skill
             </span>
             <span class="sug-cat">@s.Category</span>
           </div>
           <div class="sug-body">
-            <div class="sug-row">
-              <span class="sug-icon">⚡</span>
-              <span class="sug-txt"><b>@LocalizationService.UI.What(lang):</b> @s.What</span>
-            </div>
-            <div class="sug-row">
-              <span class="sug-icon">📖</span>
-              <span class="sug-txt"><b>@LocalizationService.UI.Why(lang):</b> @s.Why</span>
-            </div>
-            <div class="sug-row">
-              <span class="sug-icon">🕐</span>
-              <span class="sug-txt"><b>@LocalizationService.UI.When(lang):</b> @s.When</span>
-            </div>
-            @if (s.DpsGainEst > 0)
-            {
-              <div class="sug-dps">
-                <span class="sug-dps-lbl">@LocalizationService.UI.DpsGainLabel(lang)</span>
-                <span class="sug-dps-val">~+@s.DpsGainEst.ToString("N0") DPS</span>
+            <div class="sug-row"><span style="width:16px;flex-shrink:0">⚡</span><span><b>@LocalizationService.UI.What(lang):</b> @s.What</span></div>
+            <div class="sug-row"><span style="width:16px;flex-shrink:0">📖</span><span><b>@LocalizationService.UI.Why(lang):</b> @s.Why</span></div>
+            <div class="sug-row"><span style="width:16px;flex-shrink:0">🕐</span><span><b>@LocalizationService.UI.When(lang):</b> @s.When</span></div>
+            @if(s.DpsGainEst>0){
+              <div class="sug-gain">
+                <span class="sug-gain-lbl">@LocalizationService.UI.DpsGainLabel(lang)</span>
+                <span class="sug-gain-val">~+@s.DpsGainEst.ToString("N0") DPS</span>
               </div>
             }
           </div>
         </div>
       }
     </div>
-  }
-
-  <!-- Full skill comparison table -->
-  @{
-    double maxD = Model.SkillDiffs.Any() ? Model.SkillDiffs.Max(d => Math.Max(d.P1Dps, d.P2Dps)) : 1;
-    bool loserP1g = ReferenceEquals(loser, p1);
-  }
-  <div class="sec-hdr">@LocalizationService.UI.SkillCmpTitle(lang)</div>
-  <div class="tbl-wrap">
-    <div class="tbl-legend">
-      <div class="leg-item"><div class="leg-dot dot-loser"></div> @loser.PlayerName</div>
-      <div class="leg-item"><div class="leg-dot dot-winner"></div> @winner.PlayerName</div>
-    </div>
-    <table class="skill-tbl">
-      <thead>
-        <tr>
-          <th style="min-width:180px">@LocalizationService.UI.Ability(lang)</th>
-          <th class="r">@p1.PlayerName DPS</th>
-          <th class="r">@p2.PlayerName DPS</th>
-          <th class="r">Crit @p1.PlayerName</th>
-          <th class="r">Crit @p2.PlayerName</th>
-          <th class="r">Uptime @p1.PlayerName</th>
-          <th class="r">Uptime @p2.PlayerName</th>
-          <th class="r">@LocalizationService.UI.Diff(lang)</th>
-          <th class="r">@LocalizationService.UI.DpsLostCol(lang)</th>
-          <th class="r">@LocalizationService.UI.Distribution(lang)</th>
-        </tr>
-      </thead>
-      <tbody>
-      @foreach (var d in Model.SkillDiffs.Take(35))
-      {
-        var lDps = loserP1g ? d.P1Dps : d.P2Dps;
-        var wDps = loserP1g ? d.P2Dps : d.P1Dps;
-        bool p2higher = d.DiffDps > 0;
-        int bw1 = maxD > 0 ? (int)(d.P1Dps / maxD * 100) : 0;
-        int bw2 = maxD > 0 ? (int)(d.P2Dps / maxD * 100) : 0;
-        double lost = Math.Max(0, wDps - lDps);
-
-        string critCls(double lc, double wc) => wc - lc > 5 ? "crit-good" : lc - wc > 5 ? "crit-bad" : "crit-same";
-        <tr>
-          <td>
-            <div class="sk-name">
-              <span class="prio-ind pi-@d.Priority"></span>@d.Name
-            </div>
-            @if (!string.IsNullOrEmpty(d.RotationNote)){
-              <div class="sk-note">↳ @d.RotationNote</div>
-            }
-          </td>
-          <td class="td-r col-p1">@d.P1Dps.ToString("N0")</td>
-          <td class="td-r col-p2">@d.P2Dps.ToString("N0")</td>
-          <td class="td-r @(p1wins ? critCls(d.P2Crit,d.P1Crit) : critCls(d.P1Crit,d.P2Crit))">@d.P1Crit.ToString("F1")%</td>
-          <td class="td-r @(p1wins ? critCls(d.P1Crit,d.P2Crit) : critCls(d.P2Crit,d.P1Crit))">@d.P2Crit.ToString("F1")%</td>
-          <td class="td-r @(p1wins ? critCls(d.P2Uptime,d.P1Uptime) : critCls(d.P1Uptime,d.P2Uptime))">@d.P1Uptime.ToString("F1")%</td>
-          <td class="td-r @(p1wins ? critCls(d.P1Uptime,d.P2Uptime) : critCls(d.P2Uptime,d.P1Uptime))">@d.P2Uptime.ToString("F1")%</td>
-          <td class="td-r @(p2higher ? "col-up" : "col-dn")">
-            @(p2higher ? "▲" : "▼") @Math.Abs(d.DiffDps).ToString("N0")
-          </td>
-          <td class="lost-cell">@(lost > 0 ? "~" + lost.ToString("N0") : "—")</td>
-          <td class="bar-cell">
-            <div class="bar-wrap">
-              <div class="bw bw-loser" style="width:@(loserP1g ? bw1 : bw2)%"></div>
-              <div class="bw bw-winner" style="width:@(loserP1g ? bw2 : bw1)%"></div>
-            </div>
-          </td>
-        </tr>
-      }
-      </tbody>
-    </table>
   </div>
 
-  <!-- Top 10 each -->
-  <div class="sec-hdr">@LocalizationService.UI.Top10Title(lang)</div>
-  <div class="dual-grid">
-    <div class="mini-tbl-wrap">
-      <div class="mini-tbl-hdr">@p1.PlayerName</div>
-      <table class="mini-tbl">
-        @foreach (var r in p1.Records.OrderByDescending(r => r.DpsNum).Take(10))
-        {
-          <tr>
-            <td class="sk">@r.Name</td>
-            <td class="dv1">@r.DpsNum.ToString("N0")</td>
-            <td class="pct">@r.Pct.ToString("F2")%</td>
-          </tr>
-        }
-      </table>
-    </div>
-    <div class="mini-tbl-wrap">
-      <div class="mini-tbl-hdr">@p2.PlayerName</div>
-      <table class="mini-tbl">
-        @foreach (var r in p2.Records.OrderByDescending(r => r.DpsNum).Take(10))
-        {
-          <tr>
-            <td class="sk">@r.Name</td>
-            <td class="dv2">@r.DpsNum.ToString("N0")</td>
-            <td class="pct">@r.Pct.ToString("F2")%</td>
-          </tr>
-        }
-      </table>
-    </div>
-  </div>
-
-
-  <!-- Phase notes (custom JSON only) -->
-  @if (Model.Loser.ActiveSpec.IsCustom && Model.Loser.ActiveSpec.CustomPhaseNotes.Any())
-  {
-    <div class="sec-hdr">🗺️ Notas de Fase — @Model.Loser.ActiveSpec.SpecName (JSON customizado)</div>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:28px">
-      @foreach (var ph in Model.Loser.ActiveSpec.CustomPhaseNotes)
-      {
-        <div style="background:var(--panel-inner);border:1px solid var(--wow-border2);border-left:4px solid var(--wow-gold3);padding:10px 16px;display:flex;gap:12px;align-items:baseline">
-          <span style="font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:.18em;text-transform:uppercase;color:var(--wow-gold2);white-space:nowrap;min-width:100px">@ph.Phase</span>
-          <span style="font-size:.88rem;color:var(--wow-text2);line-height:1.5">@ph.Note</span>
-        </div>
-      }
-    </div>
-  }
-
-  <!-- Priority list (custom JSON only) -->
-  @if (Model.Loser.ActiveSpec.IsCustom && Model.Loser.ActiveSpec.CustomPriorityList.Any())
-  {
-    <div class="sec-hdr">📋 Priority List Customizada — @Model.Loser.ActiveSpec.SpecName</div>
-    <div class="tbl-wrap" style="margin-bottom:28px">
+  <!-- Skill table tab -->
+  <div class="tab-content" id="tab-skilltable">
+    @{double maxD=Model.SkillDiffs.Any()?Model.SkillDiffs.Max(d=>Math.Max(d.P1Dps,d.P2Dps)):1;bool loserP1g=ReferenceEquals(loser,p1);}
+    <div class="tbl-wrap">
       <table class="skill-tbl">
-        <thead><tr><th style="width:40px">#</th><th>Habilidade</th><th>Nota de Rotação</th><th class="r" style="width:80px">Core?</th></tr></thead>
-        <tbody>
-        @{ int pi=0; }
-        @foreach (var e in Model.Loser.ActiveSpec.CustomPriorityList)
-        {
-          pi++;
-          bool isCore = e.IsCoreRotation;
+        <thead>
           <tr>
-            <td style="font-family:'Cinzel',serif;font-weight:700;color:@(pi<=2?"var(--wow-red)":pi<=4?"var(--wow-orange)":"var(--wow-text3)")">@pi</td>
-            <td class="sk-name">@e.Skill</td>
-            <td style="font-size:.82rem;color:var(--wow-text2)">@e.Note</td>
-            <td class="r"><span style="font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;border:1px solid;@(isCore?"color:var(--wow-green);border-color:var(--wow-green);background:rgba(30,255,0,.06)":"color:var(--wow-text3);border-color:var(--wow-border2)")">@(isCore?"Core":"Filler")</span></td>
+            <th style="min-width:180px">@LocalizationService.UI.Ability(lang)</th>
+            <th class="r">@p1.PlayerName DPS</th>
+            <th class="r">@p2.PlayerName DPS</th>
+            <th class="r">Crit @p1.PlayerName</th>
+            <th class="r">Crit @p2.PlayerName</th>
+            <th class="r">Uptime @p1.PlayerName</th>
+            <th class="r">Uptime @p2.PlayerName</th>
+            <th class="r">@LocalizationService.UI.Diff(lang)</th>
+            <th class="r">@LocalizationService.UI.DpsLostCol(lang)</th>
+            <th class="r">@LocalizationService.UI.Distribution(lang)</th>
+          </tr>
+        </thead>
+        <tbody>
+        @foreach(var d in Model.SkillDiffs.Take(35)){
+          bool p2h=d.DiffDps>0;
+          int bw1=maxD>0?(int)(d.P1Dps/maxD*100):0;
+          int bw2=maxD>0?(int)(d.P2Dps/maxD*100):0;
+          double lost=Math.Max(0,(loserP1g?d.P2Dps:d.P1Dps)-(loserP1g?d.P1Dps:d.P2Dps));
+          <tr>
+            <td>
+              <div class="sk-name"><span class="prio-dot pd-@d.Priority"></span>@d.Name</div>
+              @if(!string.IsNullOrEmpty(d.RotationNote)){<div class="sk-note">↳ @d.RotationNote</div>}
+            </td>
+            <td class="td-r col-p1">@d.P1Dps.ToString("N0")</td>
+            <td class="td-r col-p2">@d.P2Dps.ToString("N0")</td>
+            <td class="td-r" style="color:@(d.P1Crit>=d.P2Crit?"var(--green)":"var(--red)")">@d.P1Crit.ToString("F1")%</td>
+            <td class="td-r" style="color:@(d.P2Crit>=d.P1Crit?"var(--green)":"var(--red)")">@d.P2Crit.ToString("F1")%</td>
+            <td class="td-r" style="color:@(d.P1Uptime>=d.P2Uptime?"var(--green)":"var(--red)")">@d.P1Uptime.ToString("F1")%</td>
+            <td class="td-r" style="color:@(d.P2Uptime>=d.P1Uptime?"var(--green)":"var(--red)")">@d.P2Uptime.ToString("F1")%</td>
+            <td class="td-r @(p2h?"col-up":"col-dn")">@(p2h?"▲":"▼") @Math.Abs(d.DiffDps).ToString("N0")</td>
+            <td class="td-r"><span class="lost-val">@(lost>0?"~"+lost.ToString("N0"):"—")</span></td>
+            <td style="padding:8px 10px">
+              <div class="mini-bar-wrap">
+                <div class="mb1" style="width:@(loserP1g?bw1:bw2)%"></div>
+                <div class="mb2" style="width:@(loserP1g?bw2:bw1)%"></div>
+              </div>
+            </td>
           </tr>
         }
         </tbody>
       </table>
     </div>
+  </div>
+
+  <!-- Phase notes tab -->
+  @if(loser.ActiveSpec.IsCustom && loser.ActiveSpec.CustomPhaseNotes.Any()){
+    <div class="tab-content" id="tab-phases">
+      <div class="phase-row">
+        @foreach(var ph in loser.ActiveSpec.CustomPhaseNotes){
+          <div class="phase-card">
+            <span class="phase-name">@ph.Phase</span>
+            <span class="phase-note">@ph.Note</span>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- Priority list tab -->
+  @if(loser.ActiveSpec.IsCustom && loser.ActiveSpec.CustomPriorityList.Any()){
+    <div class="tab-content" id="tab-priority">
+      <div class="tbl-wrap">
+        <table class="prio-tbl">
+          <thead><tr><th style="width:40px">#</th><th>@LocalizationService.UI.Ability(lang)</th><th>@(lang==Lang.EN?"Rotation Note":"Nota de Rotação")</th><th style="width:80px;text-align:right">@(lang==Lang.EN?"Type":"Tipo")</th></tr></thead>
+          <tbody>
+          @{int pi=0;}
+          @foreach(var e in loser.ActiveSpec.CustomPriorityList){
+            pi++;
+            <tr>
+              <td style="font-weight:700;color:@(pi<=2?"var(--red)":pi<=4?"var(--orange)":"var(--txt3)")">@pi</td>
+              <td style="color:var(--txt);font-weight:500">@e.Skill</td>
+              <td style="color:var(--txt2);font-size:.82rem">@e.Note</td>
+              <td style="text-align:right">
+                <span style="font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;border:1px solid;@(e.IsCoreRotation?"color:var(--green);border-color:var(--green);background:rgba(102,187,106,.06)":"color:var(--txt3);border-color:var(--bdr)")">
+                  @(e.IsCoreRotation ? LocalizationService.UI.Core(lang) : LocalizationService.UI.Filler(lang))
+                </span>
+              </td>
+            </tr>
+          }
+          </tbody>
+        </table>
+      </div>
+    </div>
   }
 
   <!-- Trophy -->
-  <div class="trophy-box">
+  <div class="trophy">
     <span class="trophy-ico">🏆</span>
     <div class="trophy-lbl">@LocalizationService.UI.WinnerTitle(lang)</div>
     <div class="trophy-nm">@winner.PlayerName</div>
   </div>
 
-  <footer><a href="/">@LocalizationService.UI.BackBtn(lang)</a> &nbsp;|&nbsp; WoW Evolved Combat Analytics</footer>
+  <footer><a href="@backUrl">@LocalizationService.UI.BackBtn(lang)</a> &nbsp;|&nbsp; WoW Evolved Combat Analytics</footer>
 </div>
+
+<script>
+// ── Data from server ──────────────────────────────────────────────────────────
+const SKILLS  = @Html.Raw(skillJson);
+const DONUT1  = @Html.Raw(donut1);
+const DONUT2  = @Html.Raw(donut2);
+const P1NAME  = "@p1.PlayerName";
+const P2NAME  = "@p2.PlayerName";
+const LOSERNM = "@loser.PlayerName";
+const WINNERNM= "@winner.PlayerName";
+const LOSERIS1= @(ReferenceEquals(loser,p1)?"true":"false");
+
+// ── Colors ───────────────────────────────────────────────────────────────────
+const C = {
+  blue:'#4fc3f7', gold:'#ffd100', red:'#ef5350', green:'#66bb6a',
+  orange:'#ffa726', purple:'#ab47bc', teal:'#26c6da', coral:'#ff7043',
+  bg:'#0a0804', grid:'rgba(255,255,255,0.05)', txt:'#786848', txt2:'#b8a880'
+};
+const PALETTE = [C.blue,C.gold,C.red,C.green,C.orange,C.purple,C.teal,C.coral];
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name, btn){
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const el=document.getElementById('tab-'+name);
+  if(el) el.classList.add('active');
+  if(btn) btn.classList.add('active');
+}
+
+// ── DPI scaling ───────────────────────────────────────────────────────────────
+function setupCanvas(id, w, h){
+  const c=document.getElementById(id);
+  if(!c)return null;
+  const dpr=window.devicePixelRatio||1;
+  const rect=c.parentElement.getBoundingClientRect();
+  const cw=w||(rect.width-32);
+  c.width=cw*dpr; c.height=h*dpr;
+  c.style.width=(cw)+'px'; c.style.height=h+'px';
+  const ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  return {ctx,w:cw,h};
+}
+
+// ── Horizontal bar chart ──────────────────────────────────────────────────────
+function drawBar(){
+  const {ctx,w,h}=setupCanvas('barChart',0,320);
+  if(!ctx)return;
+  const data=SKILLS.slice(0,12);
+  const maxVal=Math.max(...data.flatMap(d=>[d.p1dps,d.p2dps]),1);
+  const barH=18, gap=8, rowH=barH*2+gap+10;
+  const labelW=150, padL=8, padR=16, padT=10;
+  const chartW=w-labelW-padL-padR;
+
+  ctx.clearRect(0,0,w,h);
+
+  data.forEach((d,i)=>{
+    const y=padT+i*rowH;
+
+    // label
+    ctx.fillStyle=C.txt2;
+    ctx.font='11px Segoe UI';
+    ctx.textAlign='right';
+    ctx.textBaseline='middle';
+    ctx.fillText(d.name, labelW, y+barH);
+
+    // grid line
+    ctx.strokeStyle=C.grid;
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(labelW+padL,y);ctx.lineTo(w-padR,y+rowH);
+    ctx.stroke();
+
+    // p1 bar
+    const w1=d.p1dps/maxVal*chartW;
+    ctx.fillStyle=C.blue;
+    ctx.globalAlpha=.85;
+    ctx.fillRect(labelW+padL, y, w1, barH);
+
+    // p2 bar
+    const w2=d.p2dps/maxVal*chartW;
+    ctx.fillStyle=C.gold;
+    ctx.fillRect(labelW+padL, y+barH+2, w2, barH);
+    ctx.globalAlpha=1;
+
+    // values
+    ctx.fillStyle=C.blue; ctx.textAlign='left'; ctx.font='10px Segoe UI';
+    if(w1>30) ctx.fillText(d.p1dps.toLocaleString(), labelW+padL+w1+3, y+barH/2);
+    ctx.fillStyle=C.gold;
+    if(w2>30) ctx.fillText(d.p2dps.toLocaleString(), labelW+padL+w2+3, y+barH+2+barH/2);
+
+    // priority dot
+    const dotC=d.priority==='critical'?C.red:d.priority==='high'?C.orange:C.blue;
+    ctx.fillStyle=dotC;
+    ctx.beginPath();ctx.arc(labelW-8,y+barH,3,0,Math.PI*2);ctx.fill();
+  });
+}
+
+// ── Gauge ─────────────────────────────────────────────────────────────────────
+function drawGauge(id, value, color){
+  const c=document.getElementById(id);
+  if(!c)return;
+  const dpr=window.devicePixelRatio||1;
+  c.width=160*dpr; c.height=160*dpr;
+  c.style.width='160px'; c.style.height='160px';
+  const ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  const cx=80,cy=88,r=62;
+  const start=Math.PI*0.8, end=Math.PI*2.2;
+  const pct=Math.min(value/100,1);
+
+  // bg arc
+  ctx.strokeStyle='rgba(255,255,255,0.07)';
+  ctx.lineWidth=14;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(cx,cy,r,start,end);ctx.stroke();
+
+  // value arc
+  const grad=ctx.createLinearGradient(cx-r,cy,cx+r,cy);
+  grad.addColorStop(0,color+'88');
+  grad.addColorStop(1,color);
+  ctx.strokeStyle=grad;
+  ctx.lineWidth=14;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(cx,cy,r,start,start+(end-start)*pct);ctx.stroke();
+
+  // tick marks
+  for(let i=0;i<=10;i++){
+    const a=start+(end-start)*i/10;
+    const x1=cx+Math.cos(a)*(r-10),y1=cy+Math.sin(a)*(r-10);
+    const x2=cx+Math.cos(a)*(r-16),y2=cy+Math.sin(a)*(r-16);
+    ctx.strokeStyle=i%5===0?'rgba(255,255,255,0.3)':'rgba(255,255,255,0.1)';
+    ctx.lineWidth=i%5===0?2:1;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  }
+
+  // labels
+  ctx.fillStyle=C.txt; ctx.font='10px Segoe UI'; ctx.textAlign='center';
+  ctx.fillText('0',cx+Math.cos(start)*(r+14),cy+Math.sin(start)*(r+14));
+  ctx.fillText('100',cx+Math.cos(end)*(r+16),cy+Math.sin(end)*(r+16));
+}
+
+// ── Donut chart ───────────────────────────────────────────────────────────────
+function drawDonut(canvasId, legendId, data, colors){
+  const c=document.getElementById(canvasId);
+  if(!c)return;
+  const dpr=window.devicePixelRatio||1;
+  c.width=160*dpr;c.height=160*dpr;c.style.width='160px';c.style.height='160px';
+  const ctx=c.getContext('2d');
+  ctx.scale(dpr,dpr);
+  const total=data.reduce((s,d)=>s+d.val,0)||1;
+  const cx=80,cy=80,ro=72,ri=44;
+  let a=-Math.PI/2;
+  data.forEach((d,i)=>{
+    const slice=d.val/total*Math.PI*2;
+    ctx.fillStyle=colors[i%colors.length];
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,ro,a,a+slice);
+    ctx.closePath();ctx.fill();
+
+    // inner hole
+    ctx.fillStyle=C.bg;
+    ctx.beginPath();ctx.arc(cx,cy,ri,0,Math.PI*2);ctx.fill();
+    a+=slice;
+  });
+
+  // center text
+  ctx.fillStyle=C.txt2;ctx.font='bold 11px Segoe UI';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('DPS',cx,cy-6);
+  ctx.font='10px Segoe UI';ctx.fillStyle=C.txt;
+  ctx.fillText('Distribution',cx,cy+7);
+
+  // legend
+  const lg=document.getElementById(legendId);
+  if(lg) lg.innerHTML=data.map((d,i)=>
+    `<div style="display:flex;align-items:center;gap:5px">
+       <div style="width:9px;height:9px;background:${colors[i%colors.length]};border-radius:2px;flex-shrink:0"></div>
+       <span>${d.name} <span style="color:${colors[i%colors.length]};font-weight:600">${d.pct}%</span></span>
+     </div>`).join('');
+}
+
+// ── Uptime heatmap ────────────────────────────────────────────────────────────
+function drawHeatmap(){
+  const {ctx,w,h}=setupCanvas('heatmap',0,90);
+  if(!ctx)return;
+  const data=SKILLS.filter(d=>d.p1uptime>0||d.p2uptime>0).slice(0,14);
+  if(!data.length)return;
+  const cellW=Math.floor((w-80)/data.length);
+  const padL=80,rowH=30,padT=10;
+
+  // row labels
+  ctx.fillStyle=C.txt2;ctx.font='11px Segoe UI';ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillText(P1NAME.slice(0,12),padL-6,padT+rowH/2);
+  ctx.fillText(P2NAME.slice(0,12),padL-6,padT+rowH+4+rowH/2);
+
+  data.forEach((d,i)=>{
+    const x=padL+i*cellW;
+
+    // p1 cell
+    const u1=d.p1uptime;
+    const r1=u1>0?Math.round(Math.min(u1/100,1)*140):20;
+    const g1=u1>0?Math.round(Math.min(u1/100,1)*200+40):20;
+    ctx.fillStyle=u1>0?`rgb(${20},${g1},${r1/3})`:'rgba(255,255,255,0.03)';
+    ctx.fillRect(x+1,padT+1,cellW-2,rowH-2);
+    if(u1>0){
+      ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='9px Segoe UI';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(u1+'%',x+cellW/2,padT+rowH/2);
+    }
+
+    // p2 cell
+    const u2=d.p2uptime;
+    const g2=u2>0?Math.round(Math.min(u2/100,1)*200+40):20;
+    ctx.fillStyle=u2>0?`rgb(${20},${g2},${20})`:'rgba(255,255,255,0.03)';
+    ctx.fillRect(x+1,padT+rowH+5,cellW-2,rowH-2);
+    if(u2>0){
+      ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='9px Segoe UI';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(u2+'%',x+cellW/2,padT+rowH+5+rowH/2);
+    }
+
+    // skill label
+    ctx.fillStyle=C.txt;ctx.font='8px Segoe UI';ctx.textAlign='center';ctx.textBaseline='top';
+    const lbl=d.name.split(' ')[0].slice(0,8);
+    ctx.fillText(lbl,x+cellW/2,padT+rowH*2+10);
+  });
+}
+
+// ── DPS Lost horizontal bars ──────────────────────────────────────────────────
+function drawLostChart(){
+  const {ctx,w,h}=setupCanvas('lostChart',0,180);
+  if(!ctx)return;
+  const data=SKILLS
+    .map(d=>({...d, lost: LOSERIS1 ? Math.max(0,d.p2dps-d.p1dps) : Math.max(0,d.p1dps-d.p2dps)}))
+    .filter(d=>d.lost>0)
+    .sort((a,b)=>b.lost-a.lost)
+    .slice(0,8);
+  if(!data.length)return;
+
+  const maxLost=Math.max(...data.map(d=>d.lost),1);
+  const barH=14,gap=4,rowH=barH+gap;
+  const labelW=140,padR=60,padT=10,padL=8;
+  const chartW=w-labelW-padR-padL;
+
+  ctx.clearRect(0,0,w,h);
+
+  data.forEach((d,i)=>{
+    const y=padT+i*rowH;
+    const barW=d.lost/maxLost*chartW;
+    const dotC=d.priority==='critical'?C.red:d.priority==='high'?C.orange:C.blue;
+
+    ctx.fillStyle=C.txt2;ctx.font='10px Segoe UI';ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.fillText(d.name,labelW,y+barH/2);
+
+    // dot
+    ctx.fillStyle=dotC;
+    ctx.beginPath();ctx.arc(labelW-labelW+8,y+barH/2,3,0,Math.PI*2);ctx.fill();
+
+    // bar
+    const grad=ctx.createLinearGradient(labelW+padL,0,labelW+padL+barW,0);
+    grad.addColorStop(0,dotC+'aa');
+    grad.addColorStop(1,dotC);
+    ctx.fillStyle=grad;
+    ctx.fillRect(labelW+padL,y,barW,barH);
+
+    // value label
+    ctx.fillStyle=C.txt2;ctx.textAlign='left';ctx.font='10px Segoe UI';
+    ctx.fillText('~'+d.lost.toLocaleString()+' DPS',labelW+padL+barW+5,y+barH/2);
+  });
+}
+
+// ── Init all charts ───────────────────────────────────────────────────────────
+window.addEventListener('load',()=>{
+  drawBar();
+  drawGauge('gauge1', @p1.EfficiencyScore.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), C.blue);
+  drawGauge('gauge2', @p2.EfficiencyScore.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), C.gold);
+  drawDonut('donut1','donut1-legend',DONUT1,PALETTE);
+  drawDonut('donut2','donut2-legend',DONUT2,[C.gold,C.orange,C.teal,C.green,C.purple,C.coral,C.blue,C.red]);
+  drawHeatmap();
+  drawLostChart();
+});
+
+window.addEventListener('resize',()=>{
+  drawBar();drawHeatmap();drawLostChart();
+});
+</script>
 </body>
 </html>
